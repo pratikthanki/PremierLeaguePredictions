@@ -1,10 +1,36 @@
+import csv
 import pandas as pd
 import numpy as np
+import requests
+import datetime
 from scipy.stats import poisson, skellam
 
 
-stats = pd.read_csv('Stats.csv')
+now = datetime.datetime.now()
 
+if now.month in (8,9,10,11,12):
+    season = str(now.year)[-2:] + str(now.year + 1)[-2:]
+elif now.month in (1,2,3,4,5):
+    season = str(now.year - 1)[-2:] + str(now.year)[-2:]
+else:
+    season = str(now.year - 1)[-2:] + str(now.year)[-2:]
+
+
+url = 'https://www.football-data.co.uk/mmz4281/'+season+'/E0.csv'
+with requests.Session() as s:
+    download = s.get(url)
+    decoded_content = download.content.decode('utf-8')
+    cr = csv.reader(decoded_content.splitlines(), delimiter=',')
+    my_list = list(cr)
+
+
+all_games = pd.DataFrame(data=my_list)
+new_header = all_games.iloc[0]              # grab the first row for the header
+all_games = all_games[1:]                   # take the data less the header row
+all_games.columns = new_header              # set the header row as the df header
+
+
+stats = pd.read_csv('Stats.csv')
 df = pd.concat(
     [stats[['MatchDate', 'HomeTeam', 'AwayTeam', 'Full Time Home Team Goals', 'Half Time Home Team Goals', 'Full Time Result', 'Half Time Result', 'Referee', 'Home Team Shots', 'Home Team Shots on Target', 'Home Team Fouls Committed', 'Home Team Corners', 'Home Team Yellow Cards', 'Home Team Red Cards', 'B365H', 'B365D']].assign(Home=1).rename(columns={
     'MatchDate': 'MatchDate', 'HomeTeam': 'Team', 'AwayTeam': 'Opponent', 'Full Time Home Team Goals': 'FullTimeGoals', 'Half Time Home Team Goals': 'HalfTimeGoals', 'Full TimeResult': 'FinalResult', 'Half Time Result': 'HalfTimeResult', 'Referee': 'Referee', 'Home Team Shots': 'Shots', 'Home Team Shots on Target': 'ShotsonTarget', 'Home Team FoulsCommitted': 'FoulsCommitted', 'Home Team Corners': 'Corners', 'Home Team Yellow Cards': 'YellowCards', 'Home Team Red Cards': 'RedCards', 'B365H': 'B365_Win', 'B365D': 'B365_Draw'}), 
