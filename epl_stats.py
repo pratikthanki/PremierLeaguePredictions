@@ -3,100 +3,107 @@ import pandas as pd
 import numpy as np
 import requests
 import datetime
-from scipy.stats import poisson, skellam
-
-
-now = datetime.datetime.now()
-
-if now.month in (8,9,10,11,12):
-    season = str(now.year)[-2:] + str(now.year + 1)[-2:]
-elif now.month in (1,2,3,4,5):
-    season = str(now.year - 1)[-2:] + str(now.year)[-2:]
-else:
-    season = str(now.year - 1)[-2:] + str(now.year)[-2:]
-
-
-url = 'https://www.football-data.co.uk/mmz4281/'+season+'/E0.csv'
-with requests.Session() as s:
-    download = s.get(url)
-    decoded_content = download.content.decode('utf-8')
-    cr = csv.reader(decoded_content.splitlines(), delimiter=',')
-    my_list = list(cr)
-
-
-all_games = pd.DataFrame(data=my_list)
-new_header = all_games.iloc[0]              # grab the first row for the header
-all_games = all_games[1:]                   # take the data less the header row
-all_games.columns = new_header              # set the header row as the df header
-
-
-stats = pd.read_csv('Stats.csv')
-df = pd.concat(
-    [stats[['MatchDate', 'HomeTeam', 'AwayTeam', 'Full Time Home Team Goals', 'Half Time Home Team Goals', 'Full Time Result', 'Half Time Result', 'Referee', 'Home Team Shots', 'Home Team Shots on Target', 'Home Team Fouls Committed', 'Home Team Corners', 'Home Team Yellow Cards', 'Home Team Red Cards', 'B365H', 'B365D']].assign(Home=1).rename(columns={
-    'MatchDate': 'MatchDate', 'HomeTeam': 'Team', 'AwayTeam': 'Opponent', 'Full Time Home Team Goals': 'FullTimeGoals', 'Half Time Home Team Goals': 'HalfTimeGoals', 'Full TimeResult': 'FinalResult', 'Half Time Result': 'HalfTimeResult', 'Referee': 'Referee', 'Home Team Shots': 'Shots', 'Home Team Shots on Target': 'ShotsonTarget', 'Home Team FoulsCommitted': 'FoulsCommitted', 'Home Team Corners': 'Corners', 'Home Team Yellow Cards': 'YellowCards', 'Home Team Red Cards': 'RedCards', 'B365H': 'B365_Win', 'B365D': 'B365_Draw'}), 
-    stats[['MatchDate', 'AwayTeam', 'HomeTeam', 'Full Time Away Team Goals', 'Half Time Away Team Goals', 'Full Time Result', 'Half Time Result', 'Referee', 'Away Team Shots', 'Away Team Shots on Target', 'Away Team Fouls Committed', 'Away Team Corners', 'Away Team Yellow Cards', 'Away Team Red Cards', 'B365A', 'B365D']].assign(Home=0).rename(columns={
-        'MatchDate': 'MatchDate', 'AwayTeam': 'Team', 'HomeTeam': 'Opponent', 'Full Time Away Team Goals': 'FullTimeGoals', 'Half Time Away Team Goals': 'HalfTimeGoals', 'Full Time Result': 'FinalResult', 'Half Time Result': 'HalfTimeResult', 'Referee': 'Referee', 'Away Team Shots': 'Shots', 'Away Team Shots on Target': 'ShotsonTarget', 'Away Team Fouls Committed': 'FoulsCommitted', 'Away Team Corners': 'Corners', 'Away Team Yellow Cards': 'YellowCards', 'Away Team Red Cards': 'RedCards', 'B365A': 'B365_Win', 'B365D': 'B365_Draw'})
-        ])
-
-
-# importing the tools required for the Poisson regression model
+from scipy.stats import poisson
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
-import pandas.tseries
+
+stats_columns = ['MatchDate', 'HomeTeam', 'AwayTeam', 'Full Time Home Team Goals', 'Half Time Home Team Goals',
+                 'Full Time Result', 'Half Time Result', 'Referee', 'Home Team Shots', 'Home Team Shots on Target',
+                 'Home Team Fouls Committed', 'Home Team Corners', 'Home Team Yellow Cards', 'Home Team Red Cards',
+                 'B365H', 'B365D']
 
 
-poisson_model = smf.glm(formula="FullTimeGoals ~ Home + Team + Opponent", data=df,
-                        family=sm.families.Poisson()).fit()
-poisson_model.summary()
-
-# ------------------------------------------------------------------------------------------
-
-# Passing specific parameters into the GLM to get predicted number of goals
-
-
-def match_simulation(homeTeam, awayTeam):
-    homeGoals = poisson_model.predict(pd.DataFrame(
-        data={'Team': homeTeam, 'Opponent': awayTeam, 'Home': 1}, index=[1]))
-    awayGoals = poisson_model.predict(pd.DataFrame(
-        data={'Team': awayTeam, 'Opponent': homeTeam, 'Home': 0}, index=[1]))
-
-    return(round(homeGoals), round(awayGoals))
+def current_season():
+    now = datetime.datetime.now()
+    if now.month in (8, 9, 10, 11, 12):
+        return str(now.year)[-2:] + str(now.year + 1)[-2:]
+    elif now.month in (1, 2, 3, 4, 5):
+        return str(now.year - 1)[-2:] + str(now.year)[-2:]
+    else:
+        return str(now.year - 1)[-2:] + str(now.year)[-2:]
 
 
-match_simulation('Stoke', 'Man City')
+def get_latest_results():
+    url = f'https://www.football-data.co.uk/mmz4281/{current_season()}/E0.csv'
+    with requests.Session() as s:
+        download = s.get(url)
+        decoded_content = download.content.decode('utf-8')
+        cr = csv.reader(decoded_content.splitlines(), delimiter=',')
+        my_list = list(cr)
+
+    all_games = pd.DataFrame(data=my_list)
+    all_games = all_games[1:]  # take the data less the header row
+    all_games.columns = all_games.iloc[0]  # set the header row as the df header
 
 
+def parse_games_file():
+    stats = pd.read_csv('Stats.csv')
+
+    df = pd.concat(
+        [stats[stats_columns].assign(Home=1).rename(columns={
+            'MatchDate': 'MatchDate', 'HomeTeam': 'Team', 'AwayTeam': 'Opponent',
+            'Full Time Home Team Goals': 'FullTimeGoals', 'Half Time Home Team Goals': 'HalfTimeGoals',
+            'Full TimeResult': 'FinalResult', 'Half Time Result': 'HalfTimeResult', 'Referee': 'Referee',
+            'Home Team Shots': 'Shots', 'Home Team Shots on Target': 'ShotsonTarget',
+            'Home Team FoulsCommitted': 'FoulsCommitted', 'Home Team Corners': 'Corners',
+            'Home Team Yellow Cards': 'YellowCards', 'Home Team Red Cards': 'RedCards', 'B365H': 'B365_Win',
+            'B365D': 'B365_Draw'}),
+            stats[stats_columns].assign(Home=0).rename(columns={
+                'MatchDate': 'MatchDate', 'AwayTeam': 'Team', 'HomeTeam': 'Opponent',
+                'Full Time Away Team Goals': 'FullTimeGoals', 'Half Time Away Team Goals': 'HalfTimeGoals',
+                'Full Time Result': 'FinalResult', 'Half Time Result': 'HalfTimeResult', 'Referee': 'Referee',
+                'Away Team Shots': 'Shots', 'Away Team Shots on Target': 'ShotsonTarget',
+                'Away Team Fouls Committed': 'FoulsCommitted', 'Away Team Corners': 'Corners',
+                'Away Team Yellow Cards': 'YellowCards', 'Away Team Red Cards': 'RedCards', 'B365A': 'B365_Win',
+                'B365D': 'B365_Draw'})
+        ], sort=True)
+
+    return df
 
 
-def simulate_match(foot_model, homeTeam, awayTeam, max_goals=10):
-    home_goals_avg = foot_model.predict(pd.DataFrame(
-        data={'Team': homeTeam, 'Opponent': awayTeam, 'Home': 1}, index=[1])).values[0]
-
-    away_goals_avg = foot_model.predict(pd.DataFrame(
-        data={'Team': awayTeam, 'Opponent': homeTeam, 'Home': 0}, index=[1])).values[0]
-    
-    team_pred = [[poisson.pmf(i, team_avg) for i in range(0, max_goals+1)] for team_avg in [home_goals_avg, away_goals_avg]]
-    
-    return(np.outer(np.array(team_pred[0]), np.array(team_pred[1])))
+def model_data(df):
+    return smf.glm(formula="FullTimeGoals ~ Home + Team + Opponent", data=df,
+                   family=sm.families.Poisson()).fit()
 
 
-simulate_match(poisson_model, 'Stoke', 'Man City', max_goals=3)
+def match_simulation(df, home_team, away_team, max_goals=3, verbose=0):
+    poisson_model = model_data(df)
+
+    home_goals = poisson_model.predict(
+        pd.DataFrame(data={'Team': home_team, 'Opponent': away_team, 'Home': 1}, index=[1])
+    ).values[0]
+
+    away_goals = poisson_model.predict(
+        pd.DataFrame(data={'Team': away_team, 'Opponent': home_team, 'Home': 0}, index=[1])
+    ).values[0]
+
+    print(f'{home_team}: {round(home_goals, 2)}; {away_team}: {round(away_goals, 2)}')
+
+    team_prediction = [
+        [poisson.pmf(i, team_avg) for i in range(0, max_goals + 1)] for team_avg in [home_goals, away_goals]
+    ]
+
+    game = np.outer(np.array(team_prediction[0]), np.array(team_prediction[1]))
+
+    home = np.sum(np.tril(game, -1))
+    draw = np.sum(np.diag(game))
+    away = np.sum(np.triu(game, 1))
+
+    if verbose == 1:
+        print(f'Home: {home}; Draw: {draw}; Away: {away}')
 
 
+def main():
+    df = parse_games_file()
 
-game = simulate_match(poisson_model, 'Stoke', 'Man City', max_goals=10)
-np.sum(np.tril(game, -1))       # Home Win
-np.sum(np.diag(game))           # Draw
-np.sum(np.triu(game, 1))        # Away Win
+    schedule = pd.read_csv('Schedule.csv')
+    game_week = schedule[schedule['Round Number'] == 9]
 
-
-schedule = pd.read_csv('Schedule.csv')
-gameweek = schedule[schedule['Round Number'] == 9]
-
-for index, row in gameweek.iterrows():
-    try:
-        print(row['Home Team'], row['Away Team'], match_simulation(row['Home Team'], row['Away Team']))
-    except KeyError:
-        print(row['Away Team'], row['Away Team'], 'Key Error')
+    for index, row in game_week.iterrows():
+        home = row['Home Team']
+        away = row['Away Team']
+        match_simulation(df, home, away)
 
 
+if __name__ == '__main__':
+    main()
