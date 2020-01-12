@@ -6,6 +6,7 @@ import datetime
 from scipy.stats import poisson
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
+from settings import api_key, put_url, fixtures_url
 
 stats_columns = ['MatchDate', 'HomeTeam', 'AwayTeam', 'Full Time Home Team Goals', 'Half Time Home Team Goals',
                  'Full Time Result', 'Half Time Result', 'Referee', 'Home Team Shots', 'Home Team Shots on Target',
@@ -66,7 +67,7 @@ def model_data(df):
                    family=sm.families.Poisson()).fit()
 
 
-def match_simulation(df, home_team, away_team, max_goals=3, verbose=0):
+def match_simulation(df, home_team, away_team, fixture_id, max_goals=3, verbose=0):
     poisson_model = model_data(df)
 
     home_goals = poisson_model.predict(
@@ -77,7 +78,17 @@ def match_simulation(df, home_team, away_team, max_goals=3, verbose=0):
         pd.DataFrame(data={'Team': away_team, 'Opponent': home_team, 'Home': 0}, index=[1])
     ).values[0]
 
-    print(f'{home_team}: {round(home_goals, 2)}; {away_team}: {round(away_goals, 2)}')
+    print(f'{home_team}: {round(home_goals, 0)}; {away_team}: {round(away_goals, 0)}')
+
+    match_result = {
+        "fixtureId": fixture_id,
+        "score": {
+            "homeGoals": round(home_goals, 0),
+            "awayGoals": round(away_goals, 0)
+        }
+    }
+
+    put_data(match_result)
 
     team_prediction = [
         [poisson.pmf(i, team_avg) for i in range(0, max_goals + 1)] for team_avg in [home_goals, away_goals]
@@ -94,31 +105,24 @@ def match_simulation(df, home_team, away_team, max_goals=3, verbose=0):
 
 
 def get_fixtures():
-    fixtures = requests.request('GET', 'https://dataduel.uk/api/season/2019/fixture')
-    fixtures = fixtures.json()
+    pass
 
-    matches = []
-    for matchday in fixtures:
-        for match in matchday['fixtures']:
-            m = {
-                'matchDay': matchday['matchDay'],
-                'homeTeam': match['homeTeam']['name'],
-                'awayTeam': match['awayTeam']['name']
-            }
 
-            matches.append(m)
+def put_data(data):
+    header = {
+        'Authorization': api_key,
+        'Content-Type': 'application/json'
+    }
 
-    print(matches)
+    resp = requests.request('PUT', put_url, headers=header, data=[data])
+    print(resp.status_code)
 
 
 def main():
     df = parse_games_file()
-    df['Team'] = df['Team'].str.replace('United', 'Utd')
     teams = df['Team'].unique()
 
-    print(teams)
-
-    fixtures = requests.request('GET', 'https://dataduel.uk/api/season/2019/fixture')
+    fixtures = requests.request('GET', fixtures_url)
     fixtures = fixtures.json()
 
     for matchday in fixtures:
@@ -129,9 +133,9 @@ def main():
             away = match['awayTeam']['shortName']
 
             if home in teams and away in teams:
-                match_simulation(df, home, away)
+                match_simulation(df, home, away, match['id'])
             else:
-                print(f'Teams not found: {home}, {away}')
+                print(f'Team(s) not found: {home}, {away}')
 
 
 if __name__ == '__main__':
