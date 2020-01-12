@@ -93,16 +93,45 @@ def match_simulation(df, home_team, away_team, max_goals=3, verbose=0):
         print(f'Home: {home}; Draw: {draw}; Away: {away}')
 
 
+def get_fixtures():
+    fixtures = requests.request('GET', 'https://dataduel.uk/api/season/2019/fixture')
+    fixtures = fixtures.json()
+
+    matches = []
+    for matchday in fixtures:
+        for match in matchday['fixtures']:
+            m = {
+                'matchDay': matchday['matchDay'],
+                'homeTeam': match['homeTeam']['name'],
+                'awayTeam': match['awayTeam']['name']
+            }
+
+            matches.append(m)
+
+    print(matches)
+
+
 def main():
     df = parse_games_file()
+    df['Team'] = df['Team'].str.replace('United', 'Utd')
+    teams = df['Team'].unique()
 
-    schedule = pd.read_csv('Schedule.csv')
-    game_week = schedule[schedule['Round Number'] == 9]
+    print(teams)
 
-    for index, row in game_week.iterrows():
-        home = row['Home Team']
-        away = row['Away Team']
-        match_simulation(df, home, away)
+    fixtures = requests.request('GET', 'https://dataduel.uk/api/season/2019/fixture')
+    fixtures = fixtures.json()
+
+    for matchday in fixtures:
+        print(f'Matchday: {matchday["matchDay"]}')
+
+        for match in matchday['fixtures']:
+            home = match['homeTeam']['shortName']
+            away = match['awayTeam']['shortName']
+
+            if home in teams and away in teams:
+                match_simulation(df, home, away)
+            else:
+                print(f'Teams not found: {home}, {away}')
 
 
 if __name__ == '__main__':
